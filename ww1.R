@@ -3,7 +3,7 @@
 setwd("~/rbraun/belgian")
 
 # Load packages
-packages <- c("xml2","rvest", "dplyr", "ggplot2", "SnowballC", "lubridate", "stringr", "httr", "RSelenium", "XML", "wdman", "jsonlite")
+packages <- c("xml2","rvest", "dplyr", "ggplot2", "SnowballC", "lubridate", "stringr", "httr", "RSelenium", "XML", "wdman", "jsonlite", "plyr", "tidyr")
 
 load.packages <- function(x) {
   if (!require(x, character.only = TRUE)) {
@@ -86,18 +86,109 @@ while(date <= end){
   day <- format(date, "%d")
   nextday <- format(date + 1, "%d")
   
-  # Paste JSON
+  # Get Personal Information
   json <- paste('{"jsonrpc":"2.0","method":"callFunction","id":1,"params":{"name":"FindPersonAdvancedPublic","arguments":{"firstName":{"value":"","mode":"head"},"lastName":{"value":"","mode":"head"},"victim_type":"all","filters":[{"type":"born","id":0,"place":{"value":"","mode":"head"},"dateFrom":{"year":"', year, '","month":"', month, '","day":"', day, '"},"dateTo":{"year":"', year, '","month":"', month, '","day":"', day, '"}}]},"token":"GUEST"}}')
   out <- jsonlite::fromJSON(json)
   r <- POST(url, body = out, encode = 'json')
   dat <- content(r, type="application/json")$result$data
-  current_df <- do.call(rbind, lapply(dat, function(x){
-    df <- data.frame(firstname = x$firstName, lastname = x$familyName, victimtype = x$victimType, born_year = x$bornDate$year, born_month = x$bornDate$month, born_day = x$bornDate$day, died_year = x$diedDate$year, died_month = x$diedDate$month, died_day = x$diedDate$day, gender = x$gender, id = x$`_id`)
-    return(df)
-  }))
-  df <- rbind(df, current_df)
+  
+  non.null.list <- lapply(dat, Filter, f = Negate(is.null))
+  personal_df <- rbind.fill(lapply(non.null.list, as.data.frame))
+  
+  # Get Military Information
+  ids <- paste(personal_df$X_id, collapse='","')
+  json2 <- paste('{"jsonrpc":"2.0","method":"getPersonsDetails","id":1,"params":{"ids":["',ids,'"],"token":"GUEST"}}', sep="")
+  out2 <- jsonlite::fromJSON(json2)
+  r2 <- POST(url, body = out2, encode = 'json')
+  dat2 <- content(r2, type="application/json")$result
+  
+  #Fill in ID for joining
+  for(i in 1:length(dat2)){
+   dat2[[i]]$X_id <- names(dat2)[i]
+  }
+  
+  non.null.list <- lapply(dat2, Filter, f = Negate(is.null))
+  military_df <- rbind.fill(lapply(non.null.list, as.data.frame))
+  current_df <- full_join(personal_df, military_df, by="X_id")
+  
+  df <- rbind.fill(df, current_df)
+  
+  # Next
   date = date + 1
 }
+
+
+### In case
+# Get Additional Info
+non.null.list <- lapply(dat3, Filter, f = Negate(is.null))
+additional_info <- rbind.fill(lapply(non.null.list, function(x){
+  as.data.frame(t(unlist(x)))
+}))
+
+additional_info$X_id<- additional_info$`_id`
+
+#Join
+current_df <- left_join(current_df, additional_info, by ="X_id")
+###
+
+ 
+ ##### This works
+ non.null.list <- lapply(dat, Filter, f = Negate(is.null))
+ 
+ non.null.list <- lapply(dat, Filter, f = Negate(is.null))
+ b <- rbind.fill(lapply(non.null.list, as.data.frame))
+ ###
+ 
+ 
+id_length <- seq_along(current_df$X_id)
+
+dat3 <- lapply(id_length, function(x){
+  json3 <- paste('{"jsonrpc":"2.0","method":"getPerson","id":1,"params":{"_id":["',current_df$X_id[x],'"],"options":["EXTEND_DOCUMENTS","EXTEND_STORIES","EXTEND_REGION","EXTEND_RELATIONS"],"token":"GUEST"}}', sep="")
+  out3 <- jsonlite::fromJSON(json3)
+  r3 <- POST(url, body = out3, encode = 'json')
+  dat3 <- content(r3, type="application/json")$result
+  return(dat3)
+})
+
+for(i in 1:length(dat3)){
+  dat2[[i]]$_id <- names(dat3)[i]
+}
+
+
+
+
+a <- as.data.frame(t(unlist(non.null.list1[1])))
+
+b <- rbind.fill(lapply(non.null.list1, function(x){
+  as.data.frame(t(unlist(x)))
+}))
+                       
+                       
+                       as.data.frame))
+
+
+as.data.frame(non.null.list[[1]])
+
+
+
+json3 <- paste('{"jsonrpc":"2.0","method":"getPerson","id":1,"params":{"_id":["',current_df$X_id[1],'"],"options":["EXTEND_DOCUMENTS","EXTEND_STORIES","EXTEND_REGION","EXTEND_RELATIONS"],"token":"GUEST"}}', sep="")
+
+
+
+
+
+
+{"jsonrpc":"2.0","method":"getPerson","id":1,"params":{"_id":"0b21ed9a-909c-49fd-88fc-e21e73948a3a","options":["EXTEND_DOCUMENTS","EXTEND_STORIES","EXTEND_REGION","EXTEND_RELATIONS"],"token":"GUEST"}}
+
+
+
+ids <- lapply(dat1, function(x){
+  x$`_id`
+})
+
+a <- paste(ids, collapse='","')
+json2 <- paste('{"jsonrpc":"2.0","method":"getPersonsDetails","id":1,"params":{"ids":["',a,'"],"token":"GUEST"}}', sep="")
+
 
 ####
 while(date <= end){
