@@ -218,4 +218,56 @@ while(date <= end){
 content(r)
 json <- '{"jsonrpc":"2.0","method":"callFunction","id":1,"params":{"name":"FindPersonAdvancedPublic","arguments":{"firstName":{"value":"","mode":"head"},"lastName":{"value":"","mode":"head"},"victim_type":"all","filters":[{"type":"born","id":0,"place":{"value":"","mode":"head"},"dateFrom":{"year":"1800","month":"01","day":"01"},"dateTo":{"year":"1840","month":"1","day":"1"}}]},"token":"GUEST"}}'
 
+###### Create Function for Scraping ###
+scrapeinfo <- function(from_date, to_date){
+url <- "https://database.namenlijst.be/api/v1"
+start <- as.Date(from_date,format="%d-%m-%Y")
+end   <- as.Date(to_date,format="%d-%m-%Y")
+date <- start
+df <- NULL
 
+# Loop by date (start here)
+while(date <= end){
+  # Set Date
+  year <- format(date, "%Y")
+  month <- format(date, "%m")
+  day <- format(date, "%d")
+  nextday <- format(date + 1, "%d")
+  
+  # Get Personal Information
+  json <- paste('{"jsonrpc":"2.0","method":"callFunction","id":1,"params":{"name":"FindPersonAdvancedPublic","arguments":{"firstName":{"value":"","mode":"head"},"lastName":{"value":"","mode":"head"},"victim_type":"all","filters":[{"type":"born","id":0,"place":{"value":"","mode":"head"},"dateFrom":{"year":"', year, '","month":"', month, '","day":"', day, '"},"dateTo":{"year":"', year, '","month":"', month, '","day":"', day, '"}}]},"token":"GUEST"}}')
+  out <- jsonlite::fromJSON(json)
+  r <- POST(url, body = out, encode = 'json')
+  dat <- content(r, type="application/json")$result$data
+  
+  non.null.list <- lapply(dat, Filter, f = Negate(is.null))
+  personal_df <- rbind.fill(lapply(non.null.list, as.data.frame))
+  
+  # Get Military Information
+  ids <- paste(personal_df$X_id, collapse='","')
+  json2 <- paste('{"jsonrpc":"2.0","method":"getPersonsDetails","id":1,"params":{"ids":["',ids,'"],"token":"GUEST"}}', sep="")
+  out2 <- jsonlite::fromJSON(json2)
+  r2 <- POST(url, body = out2, encode = 'json')
+  dat2 <- content(r2, type="application/json")$result
+  
+  #Fill in ID for joining
+  for(i in 1:length(dat2)){
+    dat2[[i]]$X_id <- names(dat2)[i]
+  }
+  
+  non.null.list <- lapply(dat2, Filter, f = Negate(is.null))
+  military_df <- rbind.fill(lapply(non.null.list, as.data.frame))
+  military_df$X_id <- as.character(military_df$X_id)
+  personal_df$X_id <- as.character(personal_df$X_id)
+  
+  current_df <- full_join(personal_df, military_df, by="X_id")
+  df <- rbind.fill(df, current_df)
+  
+  # Next
+  date = date + 1
+}
+return(df)
+}
+
+# Try function
+df <- scrapeinfo("01-01-1880", "11-01-1880")
